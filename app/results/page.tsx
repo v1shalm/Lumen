@@ -277,26 +277,29 @@ function InsightsV1() {
 }
 
 /* ═════════════════════════════════════════════════════════════════════
- * V2 — Linear-style dense rows with inline expand
+ * V2 — Bento dashboard of stat tiles
  *
- *   Reference: linear.app issue list. Bold within the editorial frame —
- *   confident type, hard left alignment, status as colored block, mono
- *   only for IDs/timestamps, density 12-15 rows per viewport.
+ *   Reference: Vercel "Threshold / Signal strength" detail card —
+ *   corner crop marks, eyebrow path title, top-right value chip,
+ *   dual metric cells, segmented gauge with axis labels, footer chips.
  *
- *   Lumen overrides on Linear:
- *     • Warm orange primary (no Linear purple)
- *     • Light theme primary (Linear is dark by default)
- *     • Geist + Phosphor (no Inter, no Lucide)
+ *   Layout: bento grid. Hero contradiction is 2x2 (full reference
+ *   treatment). Remaining tiles are 1x1 (condensed reference).
+ *
+ *   Lumen overrides:
+ *     • White card on gray canvas (reference is dark)
+ *     • Warm orange primary as fill (reference is yellow-green)
+ *     • Geist + Geist Mono kept; tabular-nums on numerals
+ *     • Multi-layer card-shadow (existing brand chrome)
  * ═════════════════════════════════════════════════════════════════════ */
 
 type StatusFilter = "all" | Status;
 
 function InsightsV2() {
   const [filter, setFilter] = useState<StatusFilter>("all");
-  const [expandedId, setExpandedId] = useState<number | null>(null);
   const [drawerInsight, setDrawerInsight] = useState<Insight | null>(null);
   const [focusIdx, setFocusIdx] = useState<number>(-1);
-  const rowRefs = useRef<(HTMLElement | null)[]>([]);
+  const tileRefs = useRef<(HTMLElement | null)[]>([]);
 
   // Order: contradictions first, then by recency
   const ordered = [...INSIGHTS].sort((a, b) => {
@@ -321,33 +324,28 @@ function InsightsV2() {
     };
   }, [drawerInsight]);
 
-  // Page-level keyboard nav: j/k, ArrowDown/Up to move; Enter to expand inline; o to open drawer
+  // Page-level keyboard nav: j/k or arrows to traverse, Enter/o to open drawer
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Don't intercept while drawer open or while typing in an input
       if (drawerInsight) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
 
-      if (e.key === "j" || e.key === "ArrowDown") {
+      if (e.key === "j" || e.key === "ArrowDown" || e.key === "ArrowRight") {
         e.preventDefault();
         setFocusIdx((i) => {
           const next = Math.min(filtered.length - 1, (i < 0 ? 0 : i + 1));
-          rowRefs.current[next]?.focus();
+          tileRefs.current[next]?.focus();
           return next;
         });
-      } else if (e.key === "k" || e.key === "ArrowUp") {
+      } else if (e.key === "k" || e.key === "ArrowUp" || e.key === "ArrowLeft") {
         e.preventDefault();
         setFocusIdx((i) => {
           const next = Math.max(0, (i < 0 ? 0 : i - 1));
-          rowRefs.current[next]?.focus();
+          tileRefs.current[next]?.focus();
           return next;
         });
-      } else if (e.key === "Enter" && focusIdx >= 0) {
-        e.preventDefault();
-        const row = filtered[focusIdx];
-        if (row) setExpandedId((cur) => (cur === row.id ? null : row.id));
-      } else if ((e.key === "o" || e.key === "O") && focusIdx >= 0) {
+      } else if ((e.key === "Enter" || e.key === "o" || e.key === "O") && focusIdx >= 0) {
         e.preventDefault();
         const row = filtered[focusIdx];
         if (row) setDrawerInsight(row);
@@ -364,9 +362,12 @@ function InsightsV2() {
     Incomplete:    INSIGHTS.filter((r) => r.status === "Incomplete").length,
   };
 
+  // Bento sizing: hero (first item) is 2x2 on lg+; rest are 1x1
+  const tileSize = (i: number) => (i === 0 ? "lg:col-span-2 lg:row-span-2" : "");
+
   return (
     <div className="max-w-[1500px] mx-auto -mt-2 pb-12">
-      {/* Compact masthead — Linear-style, big bold title, terse subtitle */}
+      {/* Compact masthead */}
       <header
         className="pt-2 pb-5 animate-enter"
         style={{ ["--i" as string]: 0 }}
@@ -381,9 +382,9 @@ function InsightsV2() {
         </div>
       </header>
 
-      {/* Filter bar — pills + sort, sits in a thin border-b strip not a card */}
+      {/* Filter bar */}
       <div
-        className="flex items-center gap-2 py-2 border-y border-border animate-enter"
+        className="flex items-center gap-2 py-2 mb-5 border-y border-border animate-enter"
         style={{ ["--i" as string]: 1 }}
       >
         <FilterPill active={filter === "all"}            onClick={() => setFilter("all")}            count={counts.all}>All</FilterPill>
@@ -391,39 +392,35 @@ function InsightsV2() {
         <FilterPill active={filter === "Verified"}       onClick={() => setFilter("Verified")}       count={counts.Verified}      tone="success">Verified</FilterPill>
         <FilterPill active={filter === "Incomplete"}     onClick={() => setFilter("Incomplete")}     count={counts.Incomplete}    tone="muted">Incomplete</FilterPill>
         <span className="ml-auto text-[11.5px] text-muted-foreground/60 tabular-nums tracking-tight hidden md:flex items-center gap-3">
-          <span>Sort: <span className="text-foreground/80 font-medium">Recency</span></span>
-          <span className="text-muted-foreground/30">·</span>
           <KbdHint>j</KbdHint><KbdHint>k</KbdHint>
           <span>navigate</span>
           <KbdHint>↵</KbdHint>
-          <span>expand</span>
-          <KbdHint>o</KbdHint>
           <span>open</span>
         </span>
       </div>
 
-      {/* Row list — Linear-style dense rows */}
-      <div role="list" className="divide-y divide-border">
-        {filtered.length === 0 ? (
-          <div className="py-16 text-center text-[13px] text-muted-foreground">
-            No insights match this filter.
-          </div>
-        ) : (
-          filtered.map((insight, i) => (
-            <V2Row
+      {/* Bento grid */}
+      {filtered.length === 0 ? (
+        <div className="py-16 text-center text-[13px] text-muted-foreground">
+          No insights match this filter.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 auto-rows-[260px] gap-5">
+          {filtered.map((insight, i) => (
+            <InsightStatTile
               key={insight.id}
               insight={insight}
-              ref={(el) => { rowRefs.current[i] = el; }}
-              id={`LMN-${insight.id.toString().padStart(3, "0")}`}
+              tileId={`LMN-${insight.id.toString().padStart(3, "0")}`}
+              hero={i === 0}
+              ref={(el) => { tileRefs.current[i] = el; }}
               isFocused={focusIdx === i}
-              isExpanded={expandedId === insight.id}
-              onClick={() => setExpandedId((cur) => (cur === insight.id ? null : insight.id))}
-              onOpenDrawer={() => setDrawerInsight(insight)}
+              onOpen={() => setDrawerInsight(insight)}
+              className={tileSize(i)}
               style={{ ["--i" as string]: i + 2 } as React.CSSProperties}
             />
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Detail drawer (shared) */}
       {drawerInsight && <DetailDrawer insight={drawerInsight} onClose={() => setDrawerInsight(null)} />}
@@ -478,122 +475,229 @@ function FilterPill({
   );
 }
 
-function statusBlock(status: Status) {
-  return status === "Contradiction" ? "bg-primary"        :
-         status === "Incomplete"    ? "bg-foreground/25"   :
-                                      "bg-emerald-600";
+/* ─────────── Corner crop marks — reference's visual signature ─────────── */
+
+function CornerMarks({ tone = "muted" }: { tone?: "muted" | "primary" }) {
+  const stroke = tone === "primary" ? "border-primary/50" : "border-muted-foreground/25";
+  return (
+    <>
+      <span aria-hidden className={cn("absolute top-2 left-2 w-2.5 h-2.5 border-t border-l", stroke)} />
+      <span aria-hidden className={cn("absolute top-2 right-2 w-2.5 h-2.5 border-t border-r", stroke)} />
+      <span aria-hidden className={cn("absolute bottom-2 left-2 w-2.5 h-2.5 border-b border-l", stroke)} />
+      <span aria-hidden className={cn("absolute bottom-2 right-2 w-2.5 h-2.5 border-b border-r", stroke)} />
+    </>
+  );
 }
 
-const V2Row = React.forwardRef<
+/* ─────────── Segmented gauge — reference's wide tick-mark progress bar ─────────── */
+
+function Gauge({
+  value, // 0..100
+  max = 100,
+  showAxis = true,
+  fillClass = "bg-primary",
+}: {
+  value: number;
+  max?: number;
+  showAxis?: boolean;
+  fillClass?: string;
+}) {
+  const TICKS = 40;
+  const filledTicks = Math.round((value / max) * TICKS);
+  return (
+    <div>
+      {/* Filled bar (continuous) + remaining (tick-marks) */}
+      <div className="flex items-center gap-[2px] h-2.5 w-full">
+        <div
+          className={cn("h-full rounded-[2px]", fillClass)}
+          style={{ width: `${(value / max) * 100}%` }}
+        />
+        {/* Ticks for the unfilled portion */}
+        <div className="flex-1 flex items-center gap-[2px] h-full">
+          {Array.from({ length: TICKS - filledTicks }).map((_, i) => (
+            <span
+              key={i}
+              className="h-full w-[2px] bg-muted-foreground/20 rounded-[1px]"
+            />
+          ))}
+        </div>
+      </div>
+      {/* Axis */}
+      {showAxis && (
+        <div className="mt-2.5 grid grid-cols-5 font-mono text-[10.5px] tabular-nums text-muted-foreground/60">
+          <span className="text-left">0%</span>
+          <span className="text-center">25%</span>
+          <span className="text-center">50%</span>
+          <span className="text-center">75%</span>
+          <span className="text-right">100%</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─────────── Source-type tile — small icon-style square ─────────── */
+
+function SourceTile({ type }: { type: SourceType }) {
+  return (
+    <span
+      className="w-7 h-7 rounded bg-muted/60 border border-border flex items-center justify-center font-mono text-[9.5px] font-bold tracking-wider text-muted-foreground"
+      title={type}
+    >
+      {type}
+    </span>
+  );
+}
+
+/* ─────────── Stat tile — reference card translated to Lumen ─────────── */
+
+const InsightStatTile = React.forwardRef<
   HTMLElement,
   {
     insight: Insight;
-    id: string;
+    tileId: string;
+    hero: boolean;
     isFocused: boolean;
-    isExpanded: boolean;
-    onClick: () => void;
-    onOpenDrawer: () => void;
+    onOpen: () => void;
+    className?: string;
     style?: React.CSSProperties;
   }
->(function V2Row({ insight, id, isFocused, isExpanded, onClick, onOpenDrawer, style }, ref) {
+>(function InsightStatTile({ insight, tileId, hero, isFocused, onOpen, className, style }, ref) {
+  // Derive a corroboration metric: how many sources agree (mocked from score)
+  const corroboration = Math.round((insight.score / 100) * insight.sources.length);
+  const corroborationPct = Math.round((corroboration / insight.sources.length) * 100);
+
+  // Mock delta vs prior synthesis run — gives the +Δ% green annotation slot
+  const delta = insight.status === "Contradiction" ? -8 :
+                insight.status === "Verified"      ? +5 :
+                                                     -2;
+
+  // Status-specific eyebrow word
+  const eyebrow =
+    insight.status === "Contradiction" ? "Contradiction" :
+    insight.status === "Incomplete"    ? "Incomplete"     :
+                                         "Verified";
+
+  // Status-specific gauge color (orange for contradiction = brand call-to-attention)
+  const fillClass =
+    insight.status === "Contradiction" ? "bg-primary"           :
+    insight.status === "Verified"      ? "bg-emerald-600"        :
+                                         "bg-muted-foreground/40";
+
+  // Top-right chip uses the same status tone (orange/emerald/muted)
+  const chipBg =
+    insight.status === "Contradiction" ? "bg-primary/10 text-primary" :
+    insight.status === "Verified"      ? "bg-emerald-600/10 text-emerald-700" :
+                                         "bg-muted text-muted-foreground";
+
   return (
     <article
       ref={ref}
-      role="listitem"
+      role="button"
       tabIndex={0}
-      style={style}
-      onClick={onClick}
+      onClick={onOpen}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          onClick();
+          onOpen();
         }
       }}
+      style={style}
+      aria-label={`Open insight: ${insight.title}`}
       className={cn(
-        "group relative animate-enter cursor-pointer",
-        "focus:outline-none focus-visible:bg-muted/40",
-        isFocused && "bg-muted/30",
-        "transition-colors duration-150",
-        "hover:bg-muted/30"
+        "group relative bg-card rounded-2xl card-shadow hover:card-shadow-md transition-all duration-300 ease-out cursor-pointer flex flex-col overflow-hidden animate-enter",
+        "hover:-translate-y-[1px] focus:outline-none focus-visible:card-shadow-md focus-visible:-translate-y-[1px]",
+        "focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        isFocused && "card-shadow-md -translate-y-[1px]",
+        className
       )}
     >
-      {/* Dense row — 56px, Linear scale */}
-      <div className="grid grid-cols-[12px_72px_minmax(0,1fr)_auto_88px_88px_28px] items-center gap-3 h-14 pl-3 pr-3">
-        {/* Status block — saturated brand color, bolder than a hairline rule */}
-        <span aria-hidden className={cn("w-2 h-2 rounded-[2px]", statusBlock(insight.status))} />
+      <CornerMarks tone={insight.status === "Contradiction" ? "primary" : "muted"} />
 
-        {/* ID — mono, confidently visible (not muted to 50%) */}
-        <span className="font-mono text-[11.5px] tabular-nums tracking-tight text-foreground/70">
-          {id}
+      {/* Header — eyebrow path + top-right chip */}
+      <div className="px-5 pt-5 pb-4 flex items-baseline justify-between gap-3 border-b border-border/60">
+        <h2 className="text-[13px] tracking-tight truncate min-w-0">
+          <span className="text-muted-foreground/70">{eyebrow}</span>
+          <span className="text-muted-foreground/30 mx-1.5">/</span>
+          <span className="text-foreground font-semibold">{insight.title}</span>
+        </h2>
+        <span className={cn(
+          "shrink-0 font-mono text-[11px] tabular-nums tracking-tight px-2 py-0.5 rounded font-semibold",
+          chipBg
+        )}>
+          {insight.score}%
         </span>
-
-        {/* Title — semibold, ellipsis */}
-        <span className="text-[13.5px] font-semibold text-foreground tracking-tight truncate">
-          {insight.title}
-        </span>
-
-        {/* Source count chip — quiet inline */}
-        <span className="text-[11px] tabular-nums text-muted-foreground tracking-tight whitespace-nowrap">
-          {insight.sources.length} sources
-        </span>
-
-        {/* Confidence — small mono pill */}
-        <span className="font-mono text-[11px] tabular-nums text-foreground/80 text-right">
-          {insight.score}<span className="text-muted-foreground/50">%</span>
-        </span>
-
-        {/* Updated time — mono right-aligned */}
-        <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70 text-right whitespace-nowrap">
-          {insight.date}
-        </span>
-
-        {/* Hover affordance — open in drawer */}
-        <button
-          type="button"
-          aria-label="Open in drawer"
-          onClick={(e) => { e.stopPropagation(); onOpenDrawer(); }}
-          className="opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-150 w-7 h-7 -mr-1 flex items-center justify-center rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-muted"
-        >
-          <ArrowUpRight className="w-3.5 h-3.5" weight="regular" />
-        </button>
       </div>
 
-      {/* Inline expand — Linear-style issue panel */}
-      {isExpanded && (
-        <div className="border-t border-border/60 bg-muted/15 px-3 py-5 pl-[100px] animate-overlay-in">
-          <div className="max-w-[68ch] space-y-4">
-            <p className="text-[14.5px] leading-[1.55] text-foreground tracking-tight">
-              {insight.finding}
+      {/* Body — dual metrics + gauge */}
+      <div className={cn("flex-1 flex flex-col", hero ? "px-7 py-7" : "px-5 py-5")}>
+        <div className={cn("grid grid-cols-2 gap-4", hero ? "mb-7" : "mb-5")}>
+          {/* Left metric — Confidence (with delta) */}
+          <div>
+            <p className="font-mono text-[10.5px] tracking-[0.12em] uppercase text-muted-foreground/70 leading-tight">
+              Confidence
             </p>
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {insight.sources.map((src, i) => (
-                <span
-                  key={`${src.name}-${i}`}
-                  className="inline-flex items-center gap-1.5 h-6 px-2 rounded bg-card border border-border text-[11px] tracking-tight"
-                >
-                  <span className="font-mono text-[9.5px] font-bold tracking-wider text-muted-foreground">
-                    {src.type}
-                  </span>
-                  <span className="text-foreground/80">{src.publisher ?? src.name}</span>
-                </span>
-              ))}
-            </div>
-            <div className="pt-2 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onOpenDrawer(); }}
-                className="text-[12px] font-semibold text-foreground hover:underline tracking-tight"
-              >
-                Open dossier
-              </button>
-              <span className="text-muted-foreground/30">·</span>
-              <span className="text-[11.5px] text-muted-foreground/60 tracking-tight">
-                Press <KbdHint>o</KbdHint> for full view
+            <p className={cn(
+              "mt-1.5 font-semibold tracking-[-0.04em] text-foreground tabular-nums leading-none flex items-baseline gap-2",
+              hero ? "text-[64px]" : "text-[40px]"
+            )}>
+              <span>{insight.score}<span className="text-muted-foreground/50">%</span></span>
+              <span className={cn(
+                "font-mono tabular-nums",
+                hero ? "text-[14px]" : "text-[11px]",
+                delta >= 0 ? "text-emerald-600" : "text-primary"
+              )}>
+                {delta >= 0 ? "+" : ""}{delta}%
               </span>
-            </div>
+            </p>
+          </div>
+          {/* Right metric — Corroboration */}
+          <div className={cn("text-right")}>
+            <p className="font-mono text-[10.5px] tracking-[0.12em] uppercase text-muted-foreground/70 leading-tight">
+              Corroboration
+            </p>
+            <p className={cn(
+              "mt-1.5 font-semibold tracking-[-0.04em] text-foreground tabular-nums leading-none",
+              hero ? "text-[64px]" : "text-[40px]"
+            )}>
+              {corroborationPct}<span className="text-muted-foreground/50">%</span>
+            </p>
           </div>
         </div>
-      )}
+
+        {/* Gauge */}
+        <Gauge value={insight.score} fillClass={fillClass} showAxis={hero} />
+      </div>
+
+      {/* Footer — sources + count chip */}
+      <div className="px-5 py-4 border-t border-border/60 flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="font-mono text-[10.5px] tracking-[0.12em] uppercase text-muted-foreground/70 mb-2 leading-tight">
+            Sources
+          </p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {insight.sources.slice(0, hero ? 6 : 4).map((src, i) => (
+              <SourceTile key={`${src.name}-${i}`} type={src.type} />
+            ))}
+            {insight.sources.length > (hero ? 6 : 4) && (
+              <span className="font-mono text-[10.5px] text-muted-foreground/60 tabular-nums">
+                +{insight.sources.length - (hero ? 6 : 4)}
+              </span>
+            )}
+          </div>
+        </div>
+        <span className={cn(
+          "shrink-0 self-end font-mono text-[10.5px] tabular-nums uppercase tracking-[0.08em] px-2 py-1 rounded font-semibold",
+          chipBg
+        )}>
+          {insight.sources.length} sources
+        </span>
+      </div>
+
+      {/* Tile ID — quiet bottom-left annotation */}
+      <span className="absolute top-2.5 left-1/2 -translate-x-1/2 font-mono text-[10px] tabular-nums tracking-[0.1em] text-muted-foreground/30 uppercase pointer-events-none">
+        {tileId}
+      </span>
     </article>
   );
 });
