@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { ArrowUpRight, X } from "@phosphor-icons/react";
 import { Button } from "@/components/primitives/Button";
@@ -362,7 +363,9 @@ function InsightsV2() {
     Incomplete:    INSIGHTS.filter((r) => r.status === "Incomplete").length,
   };
 
-  // Bento sizing: hero (first item) is 2x2 on lg+; rest are 1x1
+  // Bento sizing: hero (first item) is 2x2 on lg+; rest are 1x1.
+  // 3-col grid means hero (2 cols × 2 rows) leaves a vertical strip of 2
+  // single-tile slots; remaining tiles flow underneath. No dead quadrants.
   const tileSize = (i: number) => (i === 0 ? "lg:col-span-2 lg:row-span-2" : "");
 
   return (
@@ -405,7 +408,7 @@ function InsightsV2() {
           No insights match this filter.
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 auto-rows-[260px] gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 lg:auto-rows-[260px] gap-5">
           {filtered.map((insight, i) => (
             <InsightStatTile
               key={insight.id}
@@ -475,20 +478,6 @@ function FilterPill({
   );
 }
 
-/* ─────────── Corner crop marks — reference's visual signature ─────────── */
-
-function CornerMarks({ tone = "muted" }: { tone?: "muted" | "primary" }) {
-  const stroke = tone === "primary" ? "border-primary/50" : "border-muted-foreground/25";
-  return (
-    <>
-      <span aria-hidden className={cn("absolute top-2 left-2 w-2.5 h-2.5 border-t border-l", stroke)} />
-      <span aria-hidden className={cn("absolute top-2 right-2 w-2.5 h-2.5 border-t border-r", stroke)} />
-      <span aria-hidden className={cn("absolute bottom-2 left-2 w-2.5 h-2.5 border-b border-l", stroke)} />
-      <span aria-hidden className={cn("absolute bottom-2 right-2 w-2.5 h-2.5 border-b border-r", stroke)} />
-    </>
-  );
-}
-
 /* ─────────── Segmented gauge — reference's wide tick-mark progress bar ─────────── */
 
 function Gauge({
@@ -538,10 +527,13 @@ function Gauge({
 
 /* ─────────── Source-type tile — small icon-style square ─────────── */
 
-function SourceTile({ type }: { type: SourceType }) {
+function SourceTile({ type, small }: { type: SourceType; small?: boolean }) {
   return (
     <span
-      className="w-7 h-7 rounded bg-muted/60 border border-border flex items-center justify-center font-mono text-[9.5px] font-bold tracking-wider text-muted-foreground"
+      className={cn(
+        "rounded bg-muted/60 border border-border flex items-center justify-center font-mono font-bold tracking-wider text-muted-foreground shrink-0",
+        small ? "h-5 px-1 text-[8.5px]" : "w-7 h-7 text-[9.5px]"
+      )}
       title={type}
     >
       {type}
@@ -609,95 +601,157 @@ const InsightStatTile = React.forwardRef<
         "hover:-translate-y-[1px] focus:outline-none focus-visible:card-shadow-md focus-visible:-translate-y-[1px]",
         "focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         isFocused && "card-shadow-md -translate-y-[1px]",
+        // Hero needs explicit height — grid auto-rows + row-span doesn't
+        // always give enough room for the metrics + gauge + finding panel.
+        hero && "lg:min-h-[540px]",
         className
       )}
     >
-      <CornerMarks tone={insight.status === "Contradiction" ? "primary" : "muted"} />
-
-      {/* Header — eyebrow path + top-right chip */}
-      <div className="px-5 pt-5 pb-4 flex items-baseline justify-between gap-3 border-b border-border/60">
-        <h2 className="text-[13px] tracking-tight truncate min-w-0">
-          <span className="text-muted-foreground/70">{eyebrow}</span>
-          <span className="text-muted-foreground/30 mx-1.5">/</span>
-          <span className="text-foreground font-semibold">{insight.title}</span>
-        </h2>
+      {/* Header — eyebrow + tile id + top-right chip */}
+      <div className={cn(
+        "flex items-start justify-between gap-3 border-b border-border/60",
+        hero ? "px-7 pt-6 pb-4" : "px-4 pt-4 pb-3"
+      )}>
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-2">
+            <span className={cn(
+              "font-mono tabular-nums tracking-[0.08em] uppercase",
+              hero ? "text-[10.5px]" : "text-[10px]",
+              statusTone(insight.status)
+            )}>
+              {eyebrow}
+            </span>
+            <span className="font-mono text-[9.5px] tabular-nums tracking-[0.08em] uppercase text-muted-foreground/40">
+              {tileId}
+            </span>
+          </p>
+          <h2 className={cn(
+            "mt-1 text-foreground font-semibold tracking-tight truncate",
+            hero ? "text-[15px]" : "text-[13px]"
+          )}>
+            {insight.title}
+          </h2>
+        </div>
         <span className={cn(
-          "shrink-0 font-mono text-[11px] tabular-nums tracking-tight px-2 py-0.5 rounded font-semibold",
+          "shrink-0 font-mono tabular-nums tracking-tight px-2 py-0.5 rounded font-semibold",
+          hero ? "text-[12px]" : "text-[11px]",
           chipBg
         )}>
           {insight.score}%
         </span>
       </div>
 
-      {/* Body — dual metrics + gauge */}
-      <div className={cn("flex-1 flex flex-col", hero ? "px-7 py-7" : "px-5 py-5")}>
-        <div className={cn("grid grid-cols-2 gap-4", hero ? "mb-7" : "mb-5")}>
-          {/* Left metric — Confidence (with delta) */}
-          <div>
-            <p className="font-mono text-[10.5px] tracking-[0.12em] uppercase text-muted-foreground/70 leading-tight">
+      {/* Body — dual metrics + gauge. Small tiles use justify-between so the
+          gauge anchors the bottom with consistent air above; hero overrides
+          this since the finding panel takes the bottom slot. */}
+      <div className={cn(
+        "flex-1 flex flex-col min-h-0",
+        hero ? "px-7 py-6" : "px-4 py-4 justify-between"
+      )}>
+        <div className={cn("grid grid-cols-2 gap-4", hero ? "mb-6" : "mb-0")}>
+          {/* Left metric — Confidence */}
+          <div className="min-w-0">
+            <p className={cn(
+              "font-mono tracking-[0.12em] uppercase text-muted-foreground/70 leading-tight",
+              hero ? "text-[10.5px]" : "text-[9.5px]"
+            )}>
               Confidence
             </p>
             <p className={cn(
-              "mt-1.5 font-semibold tracking-[-0.04em] text-foreground tabular-nums leading-none flex items-baseline gap-2",
-              hero ? "text-[64px]" : "text-[40px]"
+              "mt-1.5 font-semibold tracking-[-0.04em] text-foreground tabular-nums leading-none",
+              hero ? "text-[64px]" : "text-[32px]"
             )}>
-              <span>{insight.score}<span className="text-muted-foreground/50">%</span></span>
-              <span className={cn(
-                "font-mono tabular-nums",
-                hero ? "text-[14px]" : "text-[11px]",
-                delta >= 0 ? "text-emerald-600" : "text-primary"
-              )}>
-                {delta >= 0 ? "+" : ""}{delta}%
-              </span>
+              {insight.score}<span className="text-muted-foreground/40">%</span>
+            </p>
+            {/* Delta sits below — keeps numeral baselines aligned across cols */}
+            <p className={cn(
+              "mt-2 font-mono tabular-nums leading-none",
+              hero ? "text-[12px]" : "text-[10.5px]",
+              delta >= 0 ? "text-emerald-600" : "text-primary"
+            )}>
+              {delta >= 0 ? "+" : ""}{delta}%
+              <span className="ml-1.5 text-muted-foreground/50">vs prior</span>
             </p>
           </div>
           {/* Right metric — Corroboration */}
-          <div className={cn("text-right")}>
-            <p className="font-mono text-[10.5px] tracking-[0.12em] uppercase text-muted-foreground/70 leading-tight">
+          <div className="min-w-0 text-right">
+            <p className={cn(
+              "font-mono tracking-[0.12em] uppercase text-muted-foreground/70 leading-tight",
+              hero ? "text-[10.5px]" : "text-[9.5px]"
+            )}>
               Corroboration
             </p>
             <p className={cn(
               "mt-1.5 font-semibold tracking-[-0.04em] text-foreground tabular-nums leading-none",
-              hero ? "text-[64px]" : "text-[40px]"
+              hero ? "text-[64px]" : "text-[32px]"
             )}>
-              {corroborationPct}<span className="text-muted-foreground/50">%</span>
+              {corroborationPct}<span className="text-muted-foreground/40">%</span>
+            </p>
+            {/* Source-count line beneath, mirrors delta line for baseline alignment */}
+            <p className={cn(
+              "mt-2 font-mono tabular-nums leading-none text-muted-foreground/70",
+              hero ? "text-[12px]" : "text-[10.5px]"
+            )}>
+              {corroboration} of {insight.sources.length} agree
             </p>
           </div>
         </div>
 
-        {/* Gauge */}
-        <Gauge value={insight.score} fillClass={fillClass} showAxis={hero} />
+        {/* Gauge — axis on hero only. justify-between on small tiles already
+            anchors this to the bottom of the body. */}
+        <div>
+          <Gauge value={insight.score} fillClass={fillClass} showAxis={hero} />
+        </div>
+
+        {/* Finding — hero only. mt-10 above gauge; pb-2 inside the panel so
+            its visible bottom edge isn't flush with the body's pb. The body's
+            pb-6 (24px) + footer's pt-4 (16px) gives 40px below this panel. */}
+        {hero && (
+          <div className="mt-10">
+            <div className="w-full bg-muted/30 border border-border/50 rounded-lg px-5 py-4">
+              <p className="font-mono text-[10.5px] tracking-[0.12em] uppercase text-muted-foreground/70 leading-tight mb-2">
+                Finding
+              </p>
+              <p className="text-[14px] leading-[1.55] text-foreground tracking-tight">
+                {insight.finding}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Footer — sources + count chip */}
-      <div className="px-5 py-4 border-t border-border/60 flex items-center justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="font-mono text-[10.5px] tracking-[0.12em] uppercase text-muted-foreground/70 mb-2 leading-tight">
+      {/* Footer — sources strip. Hero shows chip; small tiles drop it for room */}
+      <div className={cn(
+        "border-t border-border/60 flex items-center justify-between gap-3",
+        hero ? "px-7 py-4" : "px-4 py-3"
+      )}>
+        <div className="min-w-0 flex-1 flex items-center gap-2">
+          <p className={cn(
+            "font-mono tracking-[0.12em] uppercase text-muted-foreground/70 leading-none shrink-0",
+            hero ? "text-[10.5px]" : "text-[9.5px]"
+          )}>
             Sources
           </p>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {insight.sources.slice(0, hero ? 6 : 4).map((src, i) => (
-              <SourceTile key={`${src.name}-${i}`} type={src.type} />
+          <div className="flex items-center gap-1 min-w-0">
+            {insight.sources.slice(0, hero ? 6 : 3).map((src, i) => (
+              <SourceTile key={`${src.name}-${i}`} type={src.type} small={!hero} />
             ))}
-            {insight.sources.length > (hero ? 6 : 4) && (
-              <span className="font-mono text-[10.5px] text-muted-foreground/60 tabular-nums">
-                +{insight.sources.length - (hero ? 6 : 4)}
+            {insight.sources.length > (hero ? 6 : 3) && (
+              <span className={cn(
+                "font-mono tabular-nums text-muted-foreground/60 ml-0.5 shrink-0",
+                hero ? "text-[10.5px]" : "text-[10px]"
+              )}>
+                +{insight.sources.length - (hero ? 6 : 3)}
               </span>
             )}
           </div>
         </div>
-        <span className={cn(
-          "shrink-0 self-end font-mono text-[10.5px] tabular-nums uppercase tracking-[0.08em] px-2 py-1 rounded font-semibold",
-          chipBg
-        )}>
-          {insight.sources.length} sources
-        </span>
+        {hero && (
+          <span className="shrink-0 font-mono text-[10.5px] tabular-nums uppercase tracking-[0.08em] px-2 py-1 rounded font-semibold bg-muted text-muted-foreground">
+            {insight.sources.length} sources
+          </span>
+        )}
       </div>
-
-      {/* Tile ID — quiet bottom-left annotation */}
-      <span className="absolute top-2.5 left-1/2 -translate-x-1/2 font-mono text-[10px] tabular-nums tracking-[0.1em] text-muted-foreground/30 uppercase pointer-events-none">
-        {tileId}
-      </span>
     </article>
   );
 });
@@ -892,6 +946,11 @@ function StatusDot({ status }: { status: Status }) {
 /* ─────────── Detail drawer ─────────── */
 
 function DetailDrawer({ insight, onClose }: { insight: Insight; onClose: () => void }) {
+  // Mount portal target only after first client render. Without this guard,
+  // SSR would try to read document.body and crash.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
   const statusLabel =
     insight.status === "Contradiction" ? "Contradiction surfaced" :
     insight.status === "Incomplete"    ? "Evidence incomplete"    :
@@ -909,8 +968,10 @@ function DetailDrawer({ insight, onClose }: { insight: Insight; onClose: () => v
     onClose();
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex justify-end">
       <button
         aria-label="Close"
         onClick={onClose}
@@ -1014,6 +1075,7 @@ function DetailDrawer({ insight, onClose }: { insight: Insight; onClose: () => v
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
