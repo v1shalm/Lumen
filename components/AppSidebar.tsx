@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   House, SquaresFour, CheckCircle, Graph, Gear,
-  MagnifyingGlass, CaretUpDown,
+  CaretUpDown,
   type Icon as PhIcon,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
@@ -73,21 +73,6 @@ export function AppSidebar() {
             </span>
           </span>
           <CaretUpDown className="w-3 h-3 text-muted-foreground/60 shrink-0" weight="bold" />
-        </button>
-      </div>
-
-      {/* Search */}
-      <div className="px-3 pb-3 shrink-0">
-        <button
-          type="button"
-          className={cn(
-            "w-full h-9 flex items-center gap-2 px-3 bg-muted hover:bg-muted/80 active:bg-muted rounded-md text-[13px] text-muted-foreground/80 transition-colors duration-150",
-            FOCUS_RING
-          )}
-        >
-          <MagnifyingGlass className="w-4 h-4 shrink-0" weight="regular" />
-          <span className="flex-1 text-left">Search</span>
-          <kbd className="text-[10px] font-mono text-muted-foreground/40 leading-none px-1 py-0.5 border border-border rounded-sm">/</kbd>
         </button>
       </div>
 
