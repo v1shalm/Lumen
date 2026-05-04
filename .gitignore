@@ -39,3 +39,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+
+# editor / agent / local-only artifacts
+.vscode/
+.agents/
+lint.txt
+skills-lock.json
+
+# reference scrapes (Figma / Vercel comp captures)
+overview_reference.html
+reference.html
+vercel_*.html
