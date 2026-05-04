@@ -277,33 +277,41 @@ function InsightsV1() {
 }
 
 /* ═════════════════════════════════════════════════════════════════════
- * V2 — editorial dossier
- *   Reference: NYT op-ed, Stripe Press, hex.inc — research publication
- *   not SaaS dashboard.
+ * V2 — Linear-style dense rows with inline expand
  *
- *   • Single narrow reading column (max-w-[760px]), flush left
- *   • Each insight is a typeset article entry, not a card or row
- *   • Status carried by a single left edge rule (the only color)
- *   • Prose source attribution (no mono ticker, no chip stack)
- *   • Confidence demoted to a small byline annotation
- *   • Sentence case throughout. No uppercase status labels.
- *   • Vertical rhythm via gaps + thin border-t per entry
+ *   Reference: linear.app issue list. Bold within the editorial frame —
+ *   confident type, hard left alignment, status as colored block, mono
+ *   only for IDs/timestamps, density 12-15 rows per viewport.
+ *
+ *   Lumen overrides on Linear:
+ *     • Warm orange primary (no Linear purple)
+ *     • Light theme primary (Linear is dark by default)
+ *     • Geist + Phosphor (no Inter, no Lucide)
  * ═════════════════════════════════════════════════════════════════════ */
 
+type StatusFilter = "all" | Status;
+
 function InsightsV2() {
-  const [selected, setSelected] = useState<Insight | null>(null);
+  const [filter, setFilter] = useState<StatusFilter>("all");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [drawerInsight, setDrawerInsight] = useState<Insight | null>(null);
+  const [focusIdx, setFocusIdx] = useState<number>(-1);
+  const rowRefs = useRef<(HTMLElement | null)[]>([]);
 
   // Order: contradictions first, then by recency
   const ordered = [...INSIGHTS].sort((a, b) => {
-    const aIsContradiction = a.status === "Contradiction" ? 0 : 1;
-    const bIsContradiction = b.status === "Contradiction" ? 0 : 1;
-    if (aIsContradiction !== bIsContradiction) return aIsContradiction - bIsContradiction;
+    const aC = a.status === "Contradiction" ? 0 : 1;
+    const bC = b.status === "Contradiction" ? 0 : 1;
+    if (aC !== bC) return aC - bC;
     return a.ageHours - b.ageHours;
   });
 
+  const filtered = ordered.filter((i) => filter === "all" || i.status === filter);
+
+  // Drawer escape
   useEffect(() => {
-    if (!selected) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setSelected(null); };
+    if (!drawerInsight) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setDrawerInsight(null); };
     window.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -311,174 +319,284 @@ function InsightsV2() {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [selected]);
+  }, [drawerInsight]);
+
+  // Page-level keyboard nav: j/k, ArrowDown/Up to move; Enter to expand inline; o to open drawer
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Don't intercept while drawer open or while typing in an input
+      if (drawerInsight) return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+      if (e.key === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setFocusIdx((i) => {
+          const next = Math.min(filtered.length - 1, (i < 0 ? 0 : i + 1));
+          rowRefs.current[next]?.focus();
+          return next;
+        });
+      } else if (e.key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setFocusIdx((i) => {
+          const next = Math.max(0, (i < 0 ? 0 : i - 1));
+          rowRefs.current[next]?.focus();
+          return next;
+        });
+      } else if (e.key === "Enter" && focusIdx >= 0) {
+        e.preventDefault();
+        const row = filtered[focusIdx];
+        if (row) setExpandedId((cur) => (cur === row.id ? null : row.id));
+      } else if ((e.key === "o" || e.key === "O") && focusIdx >= 0) {
+        e.preventDefault();
+        const row = filtered[focusIdx];
+        if (row) setDrawerInsight(row);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drawerInsight, filtered, focusIdx]);
 
   const counts = {
-    verified:      INSIGHTS.filter((r) => r.status === "Verified").length,
-    contradiction: INSIGHTS.filter((r) => r.status === "Contradiction").length,
-    incomplete:    INSIGHTS.filter((r) => r.status === "Incomplete").length,
+    all:           INSIGHTS.length,
+    Verified:      INSIGHTS.filter((r) => r.status === "Verified").length,
+    Contradiction: INSIGHTS.filter((r) => r.status === "Contradiction").length,
+    Incomplete:    INSIGHTS.filter((r) => r.status === "Incomplete").length,
   };
 
   return (
-    <article className="max-w-[760px] mx-auto -mt-2 pb-16">
-      {/* Masthead — sentence case, no mono ticker */}
-      <header className="pt-2 pb-10 animate-enter" style={{ ["--i" as string]: 0 }}>
-        <h1 className="text-[clamp(2.5rem,4.5vw,3.25rem)] font-semibold tracking-[-0.025em] text-foreground leading-[1.05]">
-          Insights
-        </h1>
-        <p className="mt-3 text-[14px] text-muted-foreground tracking-tight leading-relaxed max-w-[60ch]">
-          A dossier of synthesised findings across your sources —
-          {" "}
-          <span className="text-foreground tabular-nums font-semibold">{counts.contradiction}</span>
-          {" contradiction"}{counts.contradiction === 1 ? "" : "s"} flagged,
-          {" "}
-          <span className="text-foreground tabular-nums font-semibold">{counts.verified}</span>
-          {" verified across sources, "}
-          <span className="text-foreground tabular-nums font-semibold">{counts.incomplete}</span>
-          {" awaiting corroboration."}
-        </p>
+    <div className="max-w-[1500px] mx-auto -mt-2 pb-12">
+      {/* Compact masthead — Linear-style, big bold title, terse subtitle */}
+      <header
+        className="pt-2 pb-5 animate-enter"
+        style={{ ["--i" as string]: 0 }}
+      >
+        <div className="flex items-baseline gap-3">
+          <h1 className="text-[32px] font-semibold tracking-[-0.022em] text-foreground leading-none">
+            Insights
+          </h1>
+          <span className="font-mono tabular-nums text-[12px] text-muted-foreground/60">
+            {INSIGHTS.length}
+          </span>
+        </div>
       </header>
 
-      {/* Articles */}
-      <div>
-        {ordered.map((insight, i) => (
-          <V2Article
-            key={insight.id}
-            insight={insight}
-            number={i + 1}
-            isFirst={i === 0}
-            isLast={i === ordered.length - 1}
-            onOpen={() => setSelected(insight)}
-            style={{ ["--i" as string]: i + 1 } as React.CSSProperties}
-          />
-        ))}
+      {/* Filter bar — pills + sort, sits in a thin border-b strip not a card */}
+      <div
+        className="flex items-center gap-2 py-2 border-y border-border animate-enter"
+        style={{ ["--i" as string]: 1 }}
+      >
+        <FilterPill active={filter === "all"}            onClick={() => setFilter("all")}            count={counts.all}>All</FilterPill>
+        <FilterPill active={filter === "Contradiction"}  onClick={() => setFilter("Contradiction")}  count={counts.Contradiction} tone="primary">Contradictions</FilterPill>
+        <FilterPill active={filter === "Verified"}       onClick={() => setFilter("Verified")}       count={counts.Verified}      tone="success">Verified</FilterPill>
+        <FilterPill active={filter === "Incomplete"}     onClick={() => setFilter("Incomplete")}     count={counts.Incomplete}    tone="muted">Incomplete</FilterPill>
+        <span className="ml-auto text-[11.5px] text-muted-foreground/60 tabular-nums tracking-tight hidden md:flex items-center gap-3">
+          <span>Sort: <span className="text-foreground/80 font-medium">Recency</span></span>
+          <span className="text-muted-foreground/30">·</span>
+          <KbdHint>j</KbdHint><KbdHint>k</KbdHint>
+          <span>navigate</span>
+          <KbdHint>↵</KbdHint>
+          <span>expand</span>
+          <KbdHint>o</KbdHint>
+          <span>open</span>
+        </span>
+      </div>
+
+      {/* Row list — Linear-style dense rows */}
+      <div role="list" className="divide-y divide-border">
+        {filtered.length === 0 ? (
+          <div className="py-16 text-center text-[13px] text-muted-foreground">
+            No insights match this filter.
+          </div>
+        ) : (
+          filtered.map((insight, i) => (
+            <V2Row
+              key={insight.id}
+              insight={insight}
+              ref={(el) => { rowRefs.current[i] = el; }}
+              id={`LMN-${insight.id.toString().padStart(3, "0")}`}
+              isFocused={focusIdx === i}
+              isExpanded={expandedId === insight.id}
+              onClick={() => setExpandedId((cur) => (cur === insight.id ? null : insight.id))}
+              onOpenDrawer={() => setDrawerInsight(insight)}
+              style={{ ["--i" as string]: i + 2 } as React.CSSProperties}
+            />
+          ))
+        )}
       </div>
 
       {/* Detail drawer (shared) */}
-      {selected && <DetailDrawer insight={selected} onClose={() => setSelected(null)} />}
-    </article>
+      {drawerInsight && <DetailDrawer insight={drawerInsight} onClose={() => setDrawerInsight(null)} />}
+    </div>
   );
 }
 
 /* ─────────── V2 atoms ─────────── */
 
-/** Build a prose attribution line from sources.
- *  "Drawing on HELION's 2025 reactor study, ITER model files, and corroborating
- *   analyses from McKinsey, Nature, and the U.S. DOE." */
-function sourceProse(sources: Source[]): string {
-  const publishers = sources.map((s) => s.publisher ?? s.name);
-  const lead = publishers[0];
-  const rest = publishers.slice(1);
-  if (rest.length === 0) return `Drawing on ${lead}.`;
-  if (rest.length === 1) return `Drawing on ${lead} and ${rest[0]}.`;
-  const head = rest.slice(0, -1).join(", ");
-  const tail = rest[rest.length - 1];
-  return `Drawing on ${lead}, ${head}, and ${tail}.`;
-}
-
-function V2Article({
-  insight, number, isFirst, isLast, onOpen, style,
-}: {
-  insight: Insight;
-  number: number;
-  isFirst?: boolean;
-  isLast?: boolean;
-  onOpen: () => void;
-  style?: React.CSSProperties;
-}) {
-  // Edge rule color — the only color carrier on the page
-  const ruleColor =
-    insight.status === "Contradiction" ? "bg-primary"      :
-    insight.status === "Incomplete"    ? "bg-foreground/20" :
-                                         "bg-emerald-600/70";
-
-  // Single short status caption — sentence case, no caps
-  const caption =
-    insight.status === "Contradiction" ? "Contradiction"      :
-    insight.status === "Incomplete"    ? "Awaiting corroboration" :
-                                         "Verified";
-
+function KbdHint({ children }: { children: React.ReactNode }) {
   return (
-    <section
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
-      style={style}
-      className={cn(
-        "group relative cursor-pointer animate-enter pl-6 -ml-6",
-        isFirst ? "pt-2 pb-12" : "py-12",
-        !isLast && "border-b border-border",
-        "focus:outline-none focus-visible:bg-muted/30 transition-colors duration-200",
-        "hover:[&_.v2-arrow]:text-foreground hover:[&_.v2-arrow]:translate-x-0.5 hover:[&_.v2-arrow]:-translate-y-0.5"
-      )}
-    >
-      {/* Left edge status rule — runs the height of the entry, only color on the page */}
-      <span
-        aria-hidden
-        className={cn(
-          "absolute left-0 top-12 bottom-12 w-[2px] rounded-full",
-          isFirst && "top-4",
-          ruleColor
-        )}
-      />
-
-      {/* Byline row — article number, status word, date, confidence — all quiet, all sentence-case */}
-      <p className="text-[12.5px] text-muted-foreground tracking-tight mb-4 leading-relaxed">
-        <span className="font-mono tabular-nums text-muted-foreground/50 mr-2.5">
-          № {number.toString().padStart(2, "0")}
-        </span>
-        <span className="text-foreground font-medium">{caption}</span>
-        <span className="mx-1.5 text-muted-foreground/30">·</span>
-        <span>{insight.date}</span>
-        <span className="mx-1.5 text-muted-foreground/30">·</span>
-        <span>
-          <span className="text-foreground tabular-nums font-semibold">{insight.score}%</span>
-          {" confidence"}
-        </span>
-      </p>
-
-      {/* Title — sentence case, intentional weight, larger on the lead entry */}
-      <h2
-        className={cn(
-          "text-foreground font-semibold tracking-[-0.018em] leading-[1.15]",
-          isFirst ? "text-[28px]" : "text-[22px]"
-        )}
-        style={{ textWrap: "balance" } as React.CSSProperties}
-      >
-        {insight.title}
-      </h2>
-
-      {/* Lead paragraph — the finding, set as article prose */}
-      <p
-        className={cn(
-          "mt-4 text-foreground/90 leading-[1.6] tracking-tight",
-          isFirst ? "text-[18px]" : "text-[16px]"
-        )}
-        style={{ maxWidth: "62ch", textWrap: "pretty" } as React.CSSProperties}
-      >
-        {insight.finding}
-      </p>
-
-      {/* Source attribution as prose — no mono, no chips */}
-      <p className="mt-5 text-[13px] text-muted-foreground/80 leading-[1.6] tracking-tight max-w-[58ch]">
-        {sourceProse(insight.sources)}
-        <span className="ml-1.5 text-muted-foreground/50 tabular-nums">
-          ({insight.sources.length} sources)
-        </span>
-      </p>
-
-      {/* Read more — quiet trailing affordance */}
-      <p className="mt-5 text-[12.5px] text-muted-foreground/60 group-hover:text-foreground transition-colors tracking-tight inline-flex items-center gap-1">
-        <span>Open dossier entry</span>
-        <ArrowUpRight
-          className="v2-arrow w-3.5 h-3.5 text-muted-foreground/40 transition-all duration-200 ease-out"
-          weight="regular"
-        />
-      </p>
-    </section>
+    <kbd className="font-mono text-[10.5px] px-1 py-0.5 rounded-sm border border-border bg-muted/40 text-muted-foreground tabular-nums leading-none">
+      {children}
+    </kbd>
   );
 }
+
+function FilterPill({
+  active, onClick, children, count, tone = "neutral",
+}: {
+  active?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  count: number;
+  tone?: "neutral" | "primary" | "success" | "muted";
+}) {
+  const dotColor =
+    tone === "primary" ? "bg-primary" :
+    tone === "success" ? "bg-emerald-600" :
+    tone === "muted"   ? "bg-foreground/20" :
+                         null;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "h-7 inline-flex items-center gap-1.5 px-2.5 rounded-md text-[12.5px] font-medium tracking-tight transition-colors",
+        active
+          ? "bg-foreground text-background"
+          : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+      )}
+    >
+      {dotColor && <span className={cn("w-1.5 h-1.5 rounded-full", dotColor, active && "ring-2 ring-background/30")} />}
+      <span>{children}</span>
+      <span className={cn(
+        "tabular-nums font-mono text-[10.5px]",
+        active ? "text-background/60" : "text-muted-foreground/50"
+      )}>
+        {count}
+      </span>
+    </button>
+  );
+}
+
+function statusBlock(status: Status) {
+  return status === "Contradiction" ? "bg-primary"        :
+         status === "Incomplete"    ? "bg-foreground/25"   :
+                                      "bg-emerald-600";
+}
+
+const V2Row = React.forwardRef<
+  HTMLElement,
+  {
+    insight: Insight;
+    id: string;
+    isFocused: boolean;
+    isExpanded: boolean;
+    onClick: () => void;
+    onOpenDrawer: () => void;
+    style?: React.CSSProperties;
+  }
+>(function V2Row({ insight, id, isFocused, isExpanded, onClick, onOpenDrawer, style }, ref) {
+  return (
+    <article
+      ref={ref}
+      role="listitem"
+      tabIndex={0}
+      style={style}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className={cn(
+        "group relative animate-enter cursor-pointer",
+        "focus:outline-none focus-visible:bg-muted/40",
+        isFocused && "bg-muted/30",
+        "transition-colors duration-150",
+        "hover:bg-muted/30"
+      )}
+    >
+      {/* Dense row — 56px, Linear scale */}
+      <div className="grid grid-cols-[12px_72px_minmax(0,1fr)_auto_88px_88px_28px] items-center gap-3 h-14 pl-3 pr-3">
+        {/* Status block — saturated brand color, bolder than a hairline rule */}
+        <span aria-hidden className={cn("w-2 h-2 rounded-[2px]", statusBlock(insight.status))} />
+
+        {/* ID — mono, confidently visible (not muted to 50%) */}
+        <span className="font-mono text-[11.5px] tabular-nums tracking-tight text-foreground/70">
+          {id}
+        </span>
+
+        {/* Title — semibold, ellipsis */}
+        <span className="text-[13.5px] font-semibold text-foreground tracking-tight truncate">
+          {insight.title}
+        </span>
+
+        {/* Source count chip — quiet inline */}
+        <span className="text-[11px] tabular-nums text-muted-foreground tracking-tight whitespace-nowrap">
+          {insight.sources.length} sources
+        </span>
+
+        {/* Confidence — small mono pill */}
+        <span className="font-mono text-[11px] tabular-nums text-foreground/80 text-right">
+          {insight.score}<span className="text-muted-foreground/50">%</span>
+        </span>
+
+        {/* Updated time — mono right-aligned */}
+        <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70 text-right whitespace-nowrap">
+          {insight.date}
+        </span>
+
+        {/* Hover affordance — open in drawer */}
+        <button
+          type="button"
+          aria-label="Open in drawer"
+          onClick={(e) => { e.stopPropagation(); onOpenDrawer(); }}
+          className="opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-150 w-7 h-7 -mr-1 flex items-center justify-center rounded-md text-muted-foreground/60 hover:text-foreground hover:bg-muted"
+        >
+          <ArrowUpRight className="w-3.5 h-3.5" weight="regular" />
+        </button>
+      </div>
+
+      {/* Inline expand — Linear-style issue panel */}
+      {isExpanded && (
+        <div className="border-t border-border/60 bg-muted/15 px-3 py-5 pl-[100px] animate-overlay-in">
+          <div className="max-w-[68ch] space-y-4">
+            <p className="text-[14.5px] leading-[1.55] text-foreground tracking-tight">
+              {insight.finding}
+            </p>
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {insight.sources.map((src, i) => (
+                <span
+                  key={`${src.name}-${i}`}
+                  className="inline-flex items-center gap-1.5 h-6 px-2 rounded bg-card border border-border text-[11px] tracking-tight"
+                >
+                  <span className="font-mono text-[9.5px] font-bold tracking-wider text-muted-foreground">
+                    {src.type}
+                  </span>
+                  <span className="text-foreground/80">{src.publisher ?? src.name}</span>
+                </span>
+              ))}
+            </div>
+            <div className="pt-2 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onOpenDrawer(); }}
+                className="text-[12px] font-semibold text-foreground hover:underline tracking-tight"
+              >
+                Open dossier
+              </button>
+              <span className="text-muted-foreground/30">·</span>
+              <span className="text-[11.5px] text-muted-foreground/60 tracking-tight">
+                Press <KbdHint>o</KbdHint> for full view
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </article>
+  );
+});
 
 /* ─────────── Status copy + tone helpers ─────────── */
 
